@@ -1,4 +1,4 @@
-require "minruby"
+require("minruby")
 
 def inv(flg)
   if flg
@@ -71,7 +71,9 @@ end
 def skip_wsnl(slc)
   i = 0
   len = slen(slc)
-  while i < len && (sget(slc, i) == " " || sget(slc, i) == "\n")
+  nl = "
+"
+  while i < len && (sget(slc, i) == " " || sget(slc, i) == nl)
     i = i + 1
   end
   sconsume(slc, i)
@@ -115,7 +117,7 @@ def tk_str(slc)
   if "!" < chr && chr < "#"
     buf = ""
     i = 0
-    while (slc = sconsume(slc, 1)) && (chr = sget(slc, 0)) && !("!" < chr && chr < "#")
+    while (slc = sconsume(slc, 1)) && (chr = sget(slc, 0)) && inv("!" < chr && chr < "#")
       buf = buf + chr
     end
     slc = sconsume(slc, 1)
@@ -130,23 +132,40 @@ def tk_bool(slc)
   case true
   when bool(slc2 = expect(slc, ["true", 0, 4]))
     [["lit", true], slc2]
-  when bool(ret = expect(slc, ["false", 0, 5]))
+  when bool(slc2 = expect(slc, ["false", 0, 5]))
     [["lit", false], slc2]
   else
     nil
   end
 end
 
-def tk_kword(slc)
+def tk_ident(slc)
   fchr = sget(slc, 0)
   if (fchr == "_") || ("A" <= fchr && fchr <= "Z") || ("a" <= fchr && fchr <= "z")
-    kword = fchr
+    ident = fchr
     slc = sconsume(slc, 1)
-    while slen(slc) > 0 && (chr = sget(slc, 0)) && ((chr == "_") || ("A" <= chr && chr <= "Z") || ("a" <= chr && chr <= "z") || ("0" <= chr && chr <= "9"))
-      kword = kword + chr
+    while slen(slc) > 0 && (chr = sget(slc, 0)) && ((chr == "_") || (chr == "?") || ("A" <= chr && chr <= "Z") || ("a" <= chr && chr <= "z") || ("0" <= chr && chr <= "9"))
+      ident = ident + chr
       slc = sconsume(slc, 1)
     end
-    [["kword", kword], slc]
+    case ident
+    when "if"
+      [["kword", ident], slc]
+    when "else"
+      [["kword", ident], slc]
+    when "end"
+      [["kword", ident], slc]
+    when "while"
+      [["kword", ident], slc]
+    when "def"
+      [["kword", ident], slc]
+    when "case"
+      [["kword", ident], slc]
+    when "when"
+      [["kword", ident], slc]
+    else
+      [["ident", ident], slc]
+    end
   else
     nil
   end
@@ -208,6 +227,18 @@ end
 def tk_anglec(slc)
   tk_simple(slc, ">", ">", 1)
 end
+def tk_squareo(slc)
+  tk_simple(slc, "[", "[", 1)
+end
+def tk_squarec(slc)
+  tk_simple(slc, "]", "]", 1)
+end
+def tk_curlyo(slc)
+  tk_simple(slc, "{", "{", 1)
+end
+def tk_curlyc(slc)
+  tk_simple(slc, "}", "}", 1)
+end
 def tk_angleoeq(slc)
   tk_simple(slc, "<=", "<=", 2)
 end
@@ -226,7 +257,9 @@ end
 def tk_pipepipe(slc)
   tk_simple(slc, "||", "||", 2)
 end
-
+def tk_eqanglec(slc)
+  tk_simple(slc, "=>", "=>", 2)
+end
 def tk_eq(slc)
   tk_simple(slc, "=", "=", 1)
 end
@@ -245,8 +278,10 @@ def tokenize(slc)
   tks = []
   i = 0
   while slen(slc) > 0
-    ret = tk_lit(slc) || tk_kword(slc) || tk_comma(slc) || tk_pareno(slc) || tk_parenc(slc) || tk_plus(slc) || tk_minus(slc) || tk_aster(slc) || tk_slash(slc) || tk_percent(slc) || tk_angleo(slc) || tk_anglec(slc) || tk_angleoeq(slc) || tk_angleceq(slc) || tk_eqeq(slc) || tk_bangbang(slc) || tk_ampamp(slc) || tk_pipepipe(slc)
+    ret = tk_lit(slc) || tk_ident(slc) || tk_comma(slc) || tk_pareno(slc) || tk_parenc(slc) || tk_plus(slc) || tk_minus(slc) || tk_aster(slc) || tk_slash(slc) || tk_percent(slc) || tk_angleoeq(slc) || tk_angleceq(slc) || tk_squareo(slc) || tk_squarec(slc) || tk_curlyo(slc) || tk_curlyc(slc) || tk_eqeq(slc) || tk_bangeq(slc) || tk_ampamp(slc) || tk_pipepipe(slc) || tk_eqanglec(slc) || tk_eq(slc) || tk_angleo(slc) || tk_anglec(slc)
     if ret == nil
+      p(slc)
+      p(tks)
       raise("unknown token")
     end
     slc = ret[1]
@@ -257,12 +292,61 @@ def tokenize(slc)
   [tks, 0, i]
 end
 
-def parse_defun(tslc)
-  nil
+def parse_func_def(tslc)
+  ret = tk_expect(tslc, "kword")
+  if ret && r_tk(ret)[1] == "def"
+    tslc = r_slc(ret)
+    ret = tk_expect(tslc, "ident")
+    if ret
+      tslc = r_slc(ret)
+      fname = r_tk(ret)[1]
+      args = []
+      i = 0
+      ret = tk_expect(tslc, "(")
+      if ret
+        tslc = r_slc(ret)
+        ret = tk_expect(tslc, ")")
+        if ret == nil
+          failed = false
+          done = false
+          while done == false && failed == false
+            ret = tk_expect(tslc, "ident")
+            if ret
+              tslc = r_slc(ret)
+              args[i] = r_tk(ret)[1]
+              i = i + 1
+              ret = tk_expect(tslc, ",")
+              if ret == nil
+                done = true
+              else
+                tslc = r_slc(ret)
+              end
+            else
+              failed = true
+            end
+          end
+          ret = tk_expect(tslc, ")")
+        end
+        if ret
+          tslc = r_slc(ret)
+          ret = parse_stmts(tslc)
+          if ret
+            tslc = r_slc(ret)
+            bdy = r_tk(ret)
+            ret = tk_expect(tslc, "kword")
+            if ret && r_tk(ret)[1] == "end"
+              tslc = r_slc(ret)
+              [["func_def", fname, args, bdy], tslc]
+            end
+          end
+        end
+      end
+    end
+  end
 end
 
 def parse_func_call(tslc)
-  ret = tk_expect(tslc, "kword")
+  ret = tk_expect(tslc, "ident")
   if ret
     tk = ["func_call", ret[0][1]]
     i = 2
@@ -277,7 +361,7 @@ def parse_func_call(tslc)
         failed = false
         done = false
         while done == false && failed == false
-          ret = parse_expr(tslc)
+          ret = parse_assign_expr(tslc)
           if ret
             tslc = r_slc(ret)
             tk[i] = ret[0]
@@ -301,12 +385,156 @@ def parse_func_call(tslc)
   end
 end
 
-def parse_fact(tslc)
+def parse_var_ref(tslc)
+  ret = tk_expect(tslc, "ident")
+  if ret
+    [["var_ref", r_tk(ret)[1]], r_slc(ret)]
+  end
+end
+
+def parse_ary_new(tslc)
+  ret = tk_expect(tslc, "[")
+  if ret
+    tslc = r_slc(ret)
+    tk = ["ary_new"]
+    i = 1
+    ret = tk_expect(tslc, "]")
+    if ret
+      tslc = r_slc(ret)
+      [tk, tslc]
+    else
+      failed = false
+      done = false
+      while done == false && failed == false
+        ret = parse_assign_expr(tslc)
+        if ret
+          tslc = r_slc(ret)
+          tk[i] = ret[0]
+          i = i + 1
+          ret = tk_expect(tslc, ",")
+          if ret == nil
+            done = true
+          else
+            tslc = r_slc(ret)
+          end
+        else
+          failed = true
+        end
+      end
+      ret = tk_expect(tslc, "]")
+      if ret
+        [tk, r_slc(ret)]
+      end
+    end
+  end
+end
+
+def parse_hash_pair(tslc)
+  ret = parse_assign_expr(tslc)
+  if ret
+    tslc = r_slc(ret)
+    key = r_tk(ret)
+    ret = tk_expect(tslc, "=>")
+    if ret
+      tslc = r_slc(ret)
+      ret = parse_assign_expr(tslc)
+      if ret
+        tslc = r_slc(ret)
+        value = r_tk(ret)
+        [[key, value], tslc]
+      end
+    end
+  end
+end
+
+def parse_hash_new(tslc)
+  ret = tk_expect(tslc, "{")
+  if ret
+    tslc = r_slc(ret)
+    tk = ["hash_new"]
+    i = 1
+    ret = tk_expect(tslc, "}")
+    if ret
+      tslc = r_slc(ret)
+      [tk, tslc]
+    else
+      failed = false
+      done = false
+      while done == false && failed == false
+        ret = parse_hash_pair(tslc)
+        if ret
+          tslc = r_slc(ret)
+          pair = r_tk(ret)
+          tk[i] = pair[0]
+          tk[i + 1] = pair[1]
+          i = i + 2
+          ret = tk_expect(tslc, ",")
+          if ret == nil
+            done = true
+          else
+            tslc = r_slc(ret)
+          end
+        else
+          failed = true
+        end
+      end
+      ret = tk_expect(tslc, "}")
+      if ret
+        [tk, r_slc(ret)]
+      end
+    end
+  end
+end
+
+def parse_paren(tslc)
+  ret = tk_expect(tslc, "(")
+  if ret
+    tslc = r_slc(ret)
+    ret = parse_assign_expr(tslc)
+    if ret
+      tslc = r_slc(ret)
+      ex = ret[0]
+      ret = tk_expect(tslc, ")")
+      if ret
+        [ex, r_slc(ret)]
+      end
+    end
+  end
+end
+
+def parse_atom(tslc)
   case true
   when bool(ret = tk_expect(tslc, "lit"))
     ret
   when bool(ret = parse_func_call(tslc))
     ret
+  when bool(ret = parse_var_ref(tslc))
+    ret
+  when bool(ret = parse_paren(tslc))
+    ret
+  when bool(ret = parse_if(tslc))
+    ret
+  when bool(ret = parse_case(tslc))
+    ret
+  when bool(ret = parse_while(tslc))
+    ret
+  when bool(ret = parse_ary_new(tslc))
+    ret
+  when bool(ret = parse_hash_new(tslc))
+    ret
+  end
+end
+
+def parse_fact(tslc)
+  ret = parse_atom(tslc)
+  if ret
+    tslc = r_slc(ret)
+    root = r_tk(ret)
+    while (ret = parse_ary_ref_idx(tslc))
+      tslc = r_slc(ret)
+      root = ["ary_ref", root, r_tk(ret)]
+    end
+    [root, tslc]
   end
 end
 
@@ -315,49 +543,286 @@ def parse_term(tslc)
   if ret
     tslc = r_slc(ret)
     ltk = r_tk(ret)
-    ret2 = tk_expect(tslc, "*") || tk_expect(tslc, "/")
-    if ret2
+    while (ret2 = tk_expect(tslc, "*") || tk_expect(tslc, "/") || tk_expect(tslc, "%"))
       tslc = r_slc(ret2)
       op = r_tk(ret2)
       ret = parse_fact(tslc)
       if ret
         tslc = r_slc(ret)
         rtk = r_tk(ret)
-        [[op[0], ltk, rtk], tslc]
+        ltk = [op[0], ltk, rtk]
       end
+    end
+    [ltk, tslc]
+  end
+end
+
+def parse_var_assign(tslc)
+  ret = tk_expect(tslc, "ident")
+  if ret
+    tslc = r_slc(ret)
+    ltk = r_tk(ret)
+    rtk = nil
+    while (ret2 = tk_expect(tslc, "="))
+      tslc = r_slc(ret2)
+      op = r_tk(ret2)
+      ret = parse_assign_expr(tslc)
+      if ret
+        tslc = r_slc(ret)
+        rtk = r_tk(ret)
+        rtk = ["var_assign", ltk[1], rtk]
+      end
+    end
+    if rtk
+      [rtk, tslc]
     else
-      ret
+      nil
     end
   end
 end
 
-def parse_expr(tslc)
+def parse_ary_assign(tslc)
+  ret = parse_atom(tslc)
+  if ret
+    tslc = r_slc(ret)
+    root = r_tk(ret)
+    while (ret = parse_ary_ref_idx(tslc))
+      tslc = r_slc(ret)
+      root = ["ary_ref", root, r_tk(ret)]
+    end
+
+    if root[0] == "ary_ref"
+      ret = tk_expect(tslc, "=")
+      if ret
+        tslc = r_slc(ret)
+        ret = parse_assign_expr(tslc)
+        if ret
+          tslc = r_slc(ret)
+          rhe = r_tk(ret)
+          root[0] = "ary_assign"
+          root[3] = rhe
+          [root, tslc]
+        end
+      end
+    end
+  end
+end
+
+def parse_if(tslc)
+  ret = tk_expect(tslc, "kword")
+  if ret && r_tk(ret)[1] == "if"
+    tslc = r_slc(ret)
+    ret = parse_assign_expr(tslc)
+    cnd = r_tk(ret)
+    if ret
+      tslc = r_slc(ret)
+      ret = parse_stmts(tslc)
+      thn = r_tk(ret)
+      if ret
+        tslc = r_slc(ret)
+        ret = tk_expect(tslc, "kword")
+        if ret
+          tslc = r_slc(ret)
+          els = ["lit", nil]
+          if r_tk(ret)[1] == "else"
+            ret = parse_stmts(tslc)
+            els = r_tk(ret)
+            tslc = r_slc(ret)
+            ret = tk_expect(tslc, "kword")
+          end
+          if ret && r_tk(ret)[1] == "end"
+            [["if", cnd, thn, els], r_slc(ret)]
+          end
+        end
+      end
+    end
+  end
+end
+
+def parse_when(tslc)
+  ret = tk_expect(tslc, "kword")
+  if ret && r_tk(ret)[1] == "when"
+    tslc = r_slc(ret)
+    ret = parse_assign_expr(tslc)
+    if ret
+      tslc = r_slc(ret)
+      rcnd = r_tk(ret)
+      ret = parse_stmts(tslc)
+      if ret
+        tslc = r_slc(ret)
+        bdy = r_tk(ret)
+        [[rcnd, bdy], tslc]
+      end
+    end
+  end
+end
+
+def parse_else(tslc)
+  ret = tk_expect(tslc, "kword")
+  if ret && r_tk(ret)[1] == "else"
+    tslc = r_slc(ret)
+    ret = parse_stmts(tslc)
+    if ret
+      tslc = r_slc(ret)
+      bdy = r_tk(ret)
+      [bdy, tslc]
+    end
+  end
+end
+
+def parse_case(tslc)
+  ret = tk_expect(tslc, "kword")
+  if ret && r_tk(ret)[1] == "case"
+    tslc = r_slc(ret)
+    ret = parse_assign_expr(tslc)
+    if ret
+      tslc = r_slc(ret)
+      lcnd = r_tk(ret)
+      root = []
+      curr = root
+      while ret = parse_when(tslc)
+        tslc = r_slc(ret)
+        whn = r_tk(ret)
+        _if = [
+          "if",
+          ["==", lcnd, whn[0]],
+          whn[1]
+        ]
+        curr[3] = _if
+        curr = _if
+      end
+      if root[3] != nil
+        ret = parse_else(tslc)
+        if ret
+          tslc = r_slc(ret)
+          bdy = r_tk(ret)
+          curr[3] = bdy
+        end
+        ret = tk_expect(tslc, "kword")
+        if ret && r_tk(ret)[1] == "end"
+          tslc = r_slc(ret)
+          [root[3], tslc]
+        end
+      end
+    end
+  end
+end
+
+def parse_while(tslc)
+  ret = tk_expect(tslc, "kword")
+  if ret && r_tk(ret)[1] == "while"
+    tslc = r_slc(ret)
+    ret = parse_assign_expr(tslc)
+    if ret
+      tslc = r_slc(ret)
+      cnd = r_tk(ret)
+      ret = parse_stmts(tslc)
+      if ret
+        tslc = r_slc(ret)
+        bdy = r_tk(ret)
+        ret = tk_expect(tslc, "kword")
+        if ret && r_tk(ret)[1] == "end"
+          tslc = r_slc(ret)
+          [["while", cnd, bdy], tslc]
+        end
+      end
+    end
+  end
+end
+
+def parse_aexpr(tslc)
   ret = parse_term(tslc)
   if ret
     tslc = r_slc(ret)
     ltk = r_tk(ret)
-    ret2 = tk_expect(tslc, "+") || tk_expect(tslc, "-")
-    if ret2
+    while (ret2 = tk_expect(tslc, "+") || tk_expect(tslc, "-"))
       tslc = r_slc(ret2)
       op = r_tk(ret2)
       ret = parse_term(tslc)
       if ret
         tslc = r_slc(ret)
         rtk = r_tk(ret)
-        [[op[0], ltk, rtk], tslc]
+        ltk = [op[0], ltk, rtk]
       end
-    else
-      ret
+    end
+    [ltk, tslc]
+  end
+end
+
+def parse_expr(tslc)
+  ret = parse_aexpr(tslc)
+  if ret
+    tslc = r_slc(ret)
+    ltk = r_tk(ret)
+    while (ret2 = tk_expect(tslc, "<") || tk_expect(tslc, ">") || tk_expect(tslc, "<=") || tk_expect(tslc, ">=") || tk_expect(tslc, "==") || tk_expect(tslc, "!="))
+      tslc = r_slc(ret2)
+      op = r_tk(ret2)
+      ret = parse_aexpr(tslc)
+      if ret
+        tslc = r_slc(ret)
+        rtk = r_tk(ret)
+        ltk = [op[0], ltk, rtk]
+      end
+    end
+    [ltk, tslc]
+  end
+end
+
+def parse_ary_ref_idx(tslc)
+  ret = tk_expect(tslc, "[")
+  if ret
+    tslc = r_slc(ret)
+    ret = parse_assign_expr(tslc)
+    if ret
+      tslc = r_slc(ret)
+      idx = r_tk(ret)
+      ret = tk_expect(tslc, "]")
+      if ret
+        tslc = r_slc(ret)
+        [idx, tslc]
+      end
     end
   end
+end
+
+def parse_bexpr(tslc)
+  ret = parse_expr(tslc)
+  if ret
+    tslc = r_slc(ret)
+    ltk = r_tk(ret)
+    while (ret2 = tk_expect(tslc, "&&") || tk_expect(tslc, "||"))
+      tslc = r_slc(ret2)
+      op = r_tk(ret2)
+      ret = parse_assign_expr(tslc)
+      if ret
+        tslc = r_slc(ret)
+        rtk = r_tk(ret)
+        ltk = [op[0], ltk, rtk]
+      end
+    end
+    [ltk, tslc]
+  end
+end
+
+def parse_assign_expr(tslc)
+  ret = nil
+  case true
+  when bool(ret = parse_var_assign(tslc))
+    ret
+  when bool(ret = parse_ary_assign(tslc))
+    ret
+  when bool(ret = parse_bexpr(tslc))
+    ret
+  end
+  ret
 end
 
 def parse_stmt(tslc)
   ret = nil
   case true
-  when bool(ret = parse_expr(tslc))
+  when bool(ret = parse_assign_expr(tslc))
     ret
-  when bool(ret = parse_defun(tslc))
+  when bool(ret = parse_func_def(tslc))
     ret
   end
   ret
@@ -374,10 +839,40 @@ def parse_stmts(tslc)
   [stmts, tslc]
 end
 
+def clean_comments(str)
+  buf = ""
+  i = 0
+  is_comment = false
+  is_str = false
+  nl = "
+"
+  while str[i]
+    if is_comment
+      if str[i] == nl
+        is_comment = false
+      end
+    else
+      if "!" < str[i] && str[i] < "#"
+        is_str = inv(is_str)
+      end
+      if is_str == false && str[i] == "#"
+        is_comment = true
+      else
+        buf = buf + str[i]
+      end
+    end
+    i = i + 1
+  end
+  buf
+end
+
 def parse(str)
+  str = clean_comments(str)
   tslc = tokenize(fullslice(str))
   ret = parse_stmts(tslc)
   if slen(ret[1]) > 0
+    p(ret[0])
+    p(ret[1])
     raise("parse error")
   else
     ret[0]
@@ -500,7 +995,7 @@ def evaluate(exp, env, ftbl)
     if cond
       evaluate(exp[2], env, ftbl)
     else
-      evaluate(exp[3], env, ftbl)
+      exp[3] && evaluate(exp[3], env, ftbl)
     end
 
   when "while"
@@ -533,13 +1028,11 @@ def evaluate(exp, env, ftbl)
       when "fizzbuzz"
         fizzbuzz(evaluate(exp[2], env, ftbl))
       when "require"
-        require(evaluate(exp[2], env, ftbl))
-      when "minruby_parse"
-        minruby_parse(evaluate(exp[2], env, ftbl))
+        #require(evaluate(exp[2], env, ftbl))
       when "minruby_load"
         minruby_load()
       else
-        raise("unknown builtin function #{exp[1]}")
+        raise("unknown builtin function")
       end
     else
 
@@ -636,7 +1129,7 @@ env = {}
 # `minruby_load()` == `File.read(ARGV.shift)`
 # `minruby_parse(str)` parses a program text given, and returns its AST
 tree = parse(minruby_load())
-#p "tree"
-#p tree
-#p "/tree"
+#p("tree")
+#p(tree)
+#p("/tree")
 evaluate(tree, env, ftbl)
