@@ -1,7 +1,23 @@
 require "minruby"
 
+def fizzbuzz(n)
+  if n % 3 == 0
+    if n % 5 == 0
+      "fizzbuzz"
+    else
+      "fizz"
+    end
+  else
+    if n % 5 == 0
+      "buzz"
+    else
+      n
+    end
+  end
+end
+
 # An implementation of the evaluator
-def evaluate(exp, env)
+def evaluate(exp, env, ftbl)
   # exp: A current node of AST
   # env: An environment (explained later)
 
@@ -15,14 +31,35 @@ def evaluate(exp, env)
     exp[1] # return the immediate value as is
 
   when "+"
-    evaluate(exp[1], env) + evaluate(exp[2], env)
+    evaluate(exp[1], env, ftbl) + evaluate(exp[2], env, ftbl)
   when "-"
     # Subtraction.  Please fill in.
     # Use the code above for addition as a reference.
     # (Almost just copy-and-paste.  This is an exercise.)
-    raise(NotImplementedError) # Problem 1
+    evaluate(exp[1], env, ftbl) - evaluate(exp[2], env, ftbl)
   when "*"
-    raise(NotImplementedError) # Problem 1
+    evaluate(exp[1], env, ftbl) * evaluate(exp[2], env, ftbl)
+  when "/"
+    evaluate(exp[1], env, ftbl) / evaluate(exp[2], env, ftbl)
+  when "%"
+    evaluate(exp[1], env, ftbl) % evaluate(exp[2], env, ftbl)
+  when "<"
+    evaluate(exp[1], env, ftbl) < evaluate(exp[2], env, ftbl)
+  when "<="
+    evaluate(exp[1], env, ftbl) <= evaluate(exp[2], env, ftbl)
+  when ">"
+    evaluate(exp[1], env, ftbl) > evaluate(exp[2], env, ftbl)
+  when ">="
+    evaluate(exp[1], env, ftbl) >= evaluate(exp[2], env, ftbl)
+  when "=="
+    evaluate(exp[1], env, ftbl) == evaluate(exp[2], env, ftbl)
+  when "!="
+    evaluate(exp[1], env, ftbl) != evaluate(exp[2], env, ftbl)
+  when "&&"
+    evaluate(exp[1], env, ftbl) && evaluate(exp[2], env, ftbl)
+  when "&&"
+    evaluate(exp[1], env, ftbl) || evaluate(exp[2], env, ftbl)
+
   # ... Implement other operators that you need
 
   
@@ -35,7 +72,13 @@ def evaluate(exp, env)
     #
     # Advice 1: Insert `pp(exp)` and observe the AST first.
     # Advice 2: Apply `evaluate` to each child of this node.
-    raise(NotImplementedError) # Problem 2
+    i = 1
+    ret = nil
+    while exp[i]
+      ret = evaluate(exp[i], env, ftbl)
+      i = i + 1
+    end
+    ret
 
   # The second argument of this method, `env`, is an "environement" that
   # keeps track of the values stored to variables.
@@ -46,13 +89,13 @@ def evaluate(exp, env)
     # Variable reference: lookup the value corresponded to the variable
     #
     # Advice: env[???]
-    raise(NotImplementedError) # Problem 2
+    env[exp[1]]
 
   when "var_assign"
     # Variable assignment: store (or overwrite) the value to the environment
     #
     # Advice: env[???] = ???
-    raise(NotImplementedError) # Problem 2
+    env[exp[1]] = evaluate(exp[2], env, ftbl)
 
 
 #
@@ -69,11 +112,18 @@ def evaluate(exp, env)
     #   else
     #     ???
     #   end
-    raise(NotImplementedError) # Problem 3
+    cond = evaluate(exp[1], env, ftbl)
+    if cond
+      evaluate(exp[2], env, ftbl)
+    else
+      evaluate(exp[3], env, ftbl)
+    end
 
   when "while"
     # Loop.
-    raise(NotImplementedError) # Problem 3
+    while evaluate(exp[1], env, ftbl)
+      evaluate(exp[2], env, ftbl)
+    end
 
 
 #
@@ -82,19 +132,30 @@ def evaluate(exp, env)
 
   when "func_call"
     # Lookup the function definition by the given function name.
-    func = $function_definitions[exp[1]]
+    func = ftbl[exp[1]]
 
-    if func.nil?
+    if func == nil
       # We couldn't find a user-defined function definition;
       # it should be a builtin function.
       # Dispatch upon the given function name, and do paticular tasks.
       case exp[1]
       when "p"
         # MinRuby's `p` method is implemented by Ruby's `p` method.
-        p(evaluate(exp[2], env))
+        p(evaluate(exp[2], env, ftbl))
       # ... Problem 4
+      when "Integer"
+        str = evaluate(exp[2], env, ftbl)
+        Integer(str)
+      when "fizzbuzz"
+        fizzbuzz(evaluate(exp[2], env, ftbl))
+      when "require"
+        require(evaluate(exp[2], env, ftbl))
+      when "minruby_parse"
+        minruby_parse(evaluate(exp[2], env, ftbl))
+      when "minruby_load"
+        minruby_load()
       else
-        raise("unknown builtin function")
+        raise("unknown builtin function #{exp[1]}")
       end
     else
 
@@ -120,7 +181,16 @@ def evaluate(exp, env)
       # (*1) formal parameter: a variable as found in the function definition.
       # For example, `a`, `b`, and `c` are the formal parameters of
       # `def foo(a, b, c)`.
-      raise(NotImplementedError) # Problem 5
+      env2 = {}
+      func = ftbl[exp[1]]
+      args = func[0]
+      body = func[1]
+      i = 0
+      while args[i]
+        env2[args[i]] = evaluate(exp[i + 2], env, ftbl)
+        i = i + 1
+      end
+      evaluate(body, env2, ftbl)
     end
 
   when "func_def"
@@ -132,7 +202,11 @@ def evaluate(exp, env)
     # All you need is store them into $function_definitions.
     #
     # Advice: $function_definitions[???] = ???
-    raise(NotImplementedError) # Problem 5
+    ftbl[exp[1]] = [
+      exp[2],
+      exp[3]
+    ]
+    exp[2]
 
 
 #
@@ -141,28 +215,40 @@ def evaluate(exp, env)
 
   # You don't need advices anymore, do you?
   when "ary_new"
-    raise(NotImplementedError) # Problem 6
+    i = 0
+    ary = []
+    while exp[i + 1]
+      ary[i] = evaluate(exp[i + 1], env, ftbl)
+      i = i + 1
+    end
+    ary
 
   when "ary_ref"
-    raise(NotImplementedError) # Problem 6
+    evaluate(exp[1], env, ftbl)[evaluate(exp[2], env, ftbl)]
 
   when "ary_assign"
-    raise(NotImplementedError) # Problem 6
+    evaluate(exp[1], env, ftbl)[evaluate(exp[2], env, ftbl)] = evaluate(exp[3], env, ftbl)
 
   when "hash_new"
-    raise(NotImplementedError) # Problem 6
+    i = 1
+    hash = {}
+    while exp[i]
+      hash[evaluate(exp[i], env, ftbl)] = evaluate(exp[i + 1], env, ftbl)
+      i = i + 2
+    end
+    hash
 
   else
     p("error")
-    pp(exp)
+    p(exp)
     raise("unknown node")
   end
 end
 
 
-$function_definitions = {}
+ftbl = {}
 env = {}
 
 # `minruby_load()` == `File.read(ARGV.shift)`
 # `minruby_parse(str)` parses a program text given, and returns its AST
-evaluate(minruby_parse(minruby_load()), env)
+evaluate(minruby_parse(minruby_load()), env, ftbl)
