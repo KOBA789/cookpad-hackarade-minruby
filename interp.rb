@@ -1,5 +1,389 @@
 require "minruby"
 
+def inv(flg)
+  if flg
+    false
+  else
+    true
+  end
+end
+
+def bool(v)
+  inv(inv(v))
+end
+
+def fullslice(str)
+  i = 0
+  while str[i]
+    i = i + 1
+  end
+  [str, 0, i]
+end
+
+def slice(slc, start, len)
+  [slc[0], slc[1] + start, len]
+end
+def sget(slc, i)
+  slc[0][slc[1] + i]
+end
+def slen(slc)
+  slc[2]
+end
+def sconsume(slc, len)
+  [slc[0], slc[1] + len, slc[2] - len]
+end
+
+def r_tk(ret)
+  ret && ret[0]
+end
+
+def r_slc(ret)
+  ret && ret[1]
+end
+
+def to_i(chr)
+  case chr
+  when "0"
+    0
+  when "1"
+    1
+  when "2"
+    2
+  when "3"
+    3
+  when "4"
+    4
+  when "5"
+    5
+  when "6"
+    6
+  when "7"
+    7
+  when "8"
+    8
+  when "9"
+    9
+  else
+    nil
+  end
+end
+
+def skip_wsnl(slc)
+  i = 0
+  len = slen(slc)
+  while i < len && (sget(slc, i) == " " || sget(slc, i) == "\n")
+    i = i + 1
+  end
+  sconsume(slc, i)
+end
+
+def expect(bas, pat)
+  bas_len = slen(bas)
+  pat_len = slen(pat)
+  if bas_len >= pat_len
+    i = 0
+    while i < pat_len && sget(bas, i) == sget(pat, i)
+      i = i + 1
+    end
+    if i == pat_len
+      sconsume(bas, i)
+    else
+      nil
+    end
+  else
+    nil
+  end
+end
+
+def tk_num(slc)
+  i = 0
+  len = slen(slc)
+  n = 0
+  while i < len && digit = to_i(sget(slc, i))
+    n = n * 10 + digit
+    i = i + 1
+  end
+  if i == 0
+    nil
+  else
+    [["lit", n], sconsume(slc, i)]
+  end
+end
+
+def tk_str(slc)
+  chr = sget(slc, 0)
+  if "!" < chr && chr < "#"
+    buf = ""
+    i = 0
+    while (slc = sconsume(slc, 1)) && (chr = sget(slc, 0)) && !("!" < chr && chr < "#")
+      buf = buf + chr
+    end
+    slc = sconsume(slc, 1)
+    [["lit", buf], slc]
+  else
+    nil
+  end
+end
+
+def tk_bool(slc)
+  slc2 = nil
+  case true
+  when bool(slc2 = expect(slc, ["true", 0, 4]))
+    [["lit", true], slc2]
+  when bool(ret = expect(slc, ["false", 0, 5]))
+    [["lit", false], slc2]
+  else
+    nil
+  end
+end
+
+def tk_kword(slc)
+  fchr = sget(slc, 0)
+  if (fchr == "_") || ("A" <= fchr && fchr <= "Z") || ("a" <= fchr && fchr <= "z")
+    kword = fchr
+    slc = sconsume(slc, 1)
+    while slen(slc) > 0 && (chr = sget(slc, 0)) && ((chr == "_") || ("A" <= chr && chr <= "Z") || ("a" <= chr && chr <= "z") || ("0" <= chr && chr <= "9"))
+      kword = kword + chr
+      slc = sconsume(slc, 1)
+    end
+    [["kword", kword], slc]
+  else
+    nil
+  end
+end
+
+def tk_lit(slc)
+  ret = nil
+  case true
+  when bool(ret = tk_num(slc))
+    ret
+  when bool(ret = tk_str(slc))
+    ret
+  when bool(ret = tk_bool(slc))
+    ret
+  else
+    nil
+  end
+end
+
+def tk_simple(slc, tk, str, len)
+  ret = expect(slc, [str, 0, len])
+  if ret
+    [[tk], ret]
+  else
+    nil
+  end
+end
+
+def tk_comma(slc)
+  tk_simple(slc, ",", ",", 1)
+end
+
+def tk_pareno(slc)
+  tk_simple(slc, "(", "(", 1)
+end
+
+def tk_parenc(slc)
+  tk_simple(slc, ")", ")", 1)
+end
+
+def tk_plus(slc)
+  tk_simple(slc, "+", "+", 1)
+end
+def tk_minus(slc)
+  tk_simple(slc, "-", "-", 1)
+end
+def tk_aster(slc)
+  tk_simple(slc, "*", "*", 1)
+end
+def tk_slash(slc)
+  tk_simple(slc, "/", "/", 1)
+end
+def tk_percent(slc)
+  tk_simple(slc, "%", "%", 1)
+end
+def tk_angleo(slc)
+  tk_simple(slc, "<", "<", 1)
+end
+def tk_anglec(slc)
+  tk_simple(slc, ">", ">", 1)
+end
+def tk_angleoeq(slc)
+  tk_simple(slc, "<=", "<=", 2)
+end
+def tk_angleceq(slc)
+  tk_simple(slc, ">=", ">=", 2)
+end
+def tk_eqeq(slc)
+  tk_simple(slc, "==", "==", 2)
+end
+def tk_bangeq(slc)
+  tk_simple(slc, "!=", "!=", 2)
+end
+def tk_ampamp(slc)
+  tk_simple(slc, "&&", "&&", 2)
+end
+def tk_pipepipe(slc)
+  tk_simple(slc, "||", "||", 2)
+end
+
+def tk_eq(slc)
+  tk_simple(slc, "=", "=", 1)
+end
+
+def tk_expect(tslc, tk)
+  ret = sget(tslc, 0)
+  if ret && ret[0] == tk
+    [ret, sconsume(tslc, 1)]
+  else
+    nil
+  end
+end
+
+def tokenize(slc)
+  slc = skip_wsnl(slc)
+  tks = []
+  i = 0
+  while slen(slc) > 0
+    ret = tk_lit(slc) || tk_kword(slc) || tk_comma(slc) || tk_pareno(slc) || tk_parenc(slc) || tk_plus(slc) || tk_minus(slc) || tk_aster(slc) || tk_slash(slc) || tk_percent(slc) || tk_angleo(slc) || tk_anglec(slc) || tk_angleoeq(slc) || tk_angleceq(slc) || tk_eqeq(slc) || tk_bangbang(slc) || tk_ampamp(slc) || tk_pipepipe(slc)
+    if ret == nil
+      raise("unknown token")
+    end
+    slc = ret[1]
+    tks[i] = ret[0]
+    i = i + 1
+    slc = skip_wsnl(slc)
+  end
+  [tks, 0, i]
+end
+
+def parse_defun(tslc)
+  nil
+end
+
+def parse_func_call(tslc)
+  ret = tk_expect(tslc, "kword")
+  if ret
+    tk = ["func_call", ret[0][1]]
+    i = 2
+    tslc = r_slc(ret)
+    ret = tk_expect(tslc, "(")
+    if ret
+      tslc = r_slc(ret)
+      ret = tk_expect(tslc, ")")
+      if ret
+        [tk, r_slc(ret)]
+      else
+        failed = false
+        done = false
+        while done == false && failed == false
+          ret = parse_expr(tslc)
+          if ret
+            tslc = r_slc(ret)
+            tk[i] = ret[0]
+            i = i + 1
+            ret = tk_expect(tslc, ",")
+            if ret == nil
+              done = true
+            else
+              tslc = r_slc(ret)
+            end
+          else
+            failed = true
+          end
+        end
+        ret = tk_expect(tslc, ")")
+        if ret
+          [tk, r_slc(ret)]
+        end
+      end
+    end
+  end
+end
+
+def parse_fact(tslc)
+  case true
+  when bool(ret = tk_expect(tslc, "lit"))
+    ret
+  when bool(ret = parse_func_call(tslc))
+    ret
+  end
+end
+
+def parse_term(tslc)
+  ret = parse_fact(tslc)
+  if ret
+    tslc = r_slc(ret)
+    ltk = r_tk(ret)
+    ret2 = tk_expect(tslc, "*") || tk_expect(tslc, "/")
+    if ret2
+      tslc = r_slc(ret2)
+      op = r_tk(ret2)
+      ret = parse_fact(tslc)
+      if ret
+        tslc = r_slc(ret)
+        rtk = r_tk(ret)
+        [[op[0], ltk, rtk], tslc]
+      end
+    else
+      ret
+    end
+  end
+end
+
+def parse_expr(tslc)
+  ret = parse_term(tslc)
+  if ret
+    tslc = r_slc(ret)
+    ltk = r_tk(ret)
+    ret2 = tk_expect(tslc, "+") || tk_expect(tslc, "-")
+    if ret2
+      tslc = r_slc(ret2)
+      op = r_tk(ret2)
+      ret = parse_term(tslc)
+      if ret
+        tslc = r_slc(ret)
+        rtk = r_tk(ret)
+        [[op[0], ltk, rtk], tslc]
+      end
+    else
+      ret
+    end
+  end
+end
+
+def parse_stmt(tslc)
+  ret = nil
+  case true
+  when bool(ret = parse_expr(tslc))
+    ret
+  when bool(ret = parse_defun(tslc))
+    ret
+  end
+  ret
+end
+
+def parse_stmts(tslc)
+  stmts = ["stmts"]
+  i = 1
+  while (slen(tslc) > 0) && (ret = parse_stmt(tslc))
+    stmts[i] = ret[0]
+    tslc = ret[1]
+    i = i + 1
+  end
+  [stmts, tslc]
+end
+
+def parse(str)
+  tslc = tokenize(fullslice(str))
+  ret = parse_stmts(tslc)
+  if slen(ret[1]) > 0
+    raise("parse error")
+  else
+    ret[0]
+  end
+end
+
 def fizzbuzz(n)
   if n % 3 == 0
     if n % 5 == 0
@@ -57,7 +441,7 @@ def evaluate(exp, env, ftbl)
     evaluate(exp[1], env, ftbl) != evaluate(exp[2], env, ftbl)
   when "&&"
     evaluate(exp[1], env, ftbl) && evaluate(exp[2], env, ftbl)
-  when "&&"
+  when "||"
     evaluate(exp[1], env, ftbl) || evaluate(exp[2], env, ftbl)
 
   # ... Implement other operators that you need
@@ -251,4 +635,8 @@ env = {}
 
 # `minruby_load()` == `File.read(ARGV.shift)`
 # `minruby_parse(str)` parses a program text given, and returns its AST
-evaluate(minruby_parse(minruby_load()), env, ftbl)
+tree = parse(minruby_load())
+#p "tree"
+#p tree
+#p "/tree"
+evaluate(tree, env, ftbl)
